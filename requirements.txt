@@ -1,5 +1,3 @@
-Flask
-gunicorn
-line-bot-sdk
-google-generativeai
-python-dotenv
+Flask==3.0.3
+gunicorn==23.0.0
+line-bot-sdk==3.14.2
