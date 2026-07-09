@@ -7,9 +7,19 @@ import google.generativeai as genai
 
 
 IGNORE_WORDS = {
-    "謝謝", "謝謝唷", "謝謝你", "感謝", "共", "合計", "總共", "ok", "OK", "收到", "好", "好的",
-    "午安", "哈哈", "哈哈哈", "已付款", "付款了", "不用", "不用了"
+    "謝謝", "謝謝唷", "謝謝你", "感謝", "感恩", "麻煩", "辛苦了",
+    "共", "合計", "總共", "ok", "OK", "Ok", "收到", "好", "好的",
+    "午安", "早安", "晚安", "哈哈", "哈哈哈", "已付款", "付款了",
+    "不用", "不用了", "測試", "test", "TEST", "Test"
 }
+
+
+def _strip_noise(text: str) -> str:
+    s = text or ""
+    # 移除 LINE mention 樣式與常見雜訊，但保留餐點文字。
+    s = re.sub(r"@\S+", " ", s)
+    s = re.sub(r"[，,。!！?？~～]", " ", s)
+    return s.strip()
 
 
 class GeminiOrderAI:
@@ -38,6 +48,7 @@ class GeminiOrderAI:
 - 菜單通常有多個餐點名稱與價格。
 - 統計表、餐費表、金額結餘表不是菜單，必須 not_menu。
 - 看不清楚或不確定時，請 not_menu。
+- menu 只放「可點餐品項」，不要放分類、日期、合計、備註。
 """
         try:
             resp = self.vision_model.generate_content([
@@ -71,10 +82,11 @@ class GeminiOrderAI:
 {{"action":"copy","target":"對方 LINE 顯示名稱，若只說一樣則用 last"}}
 
 規則：
-1. 日常聊天、謝謝、OK、收到、已付款、共400、合計、總共、emoji、貼圖文字、問候語 → ignore。
+1. 日常聊天、謝謝、OK、收到、已付款、共400、合計、總共、emoji、貼圖文字、問候語、測試、@某人 → ignore。
 2. 訊息中有價格或金額時，只擷取餐點與數量，不要擷取金額。
    例如「二寶飯 $100*2=200」→ {{"action":"set","items":[{{"name":"二寶飯","qty":2}}]}}
    例如「雞排飯 100」→ {{"action":"set","items":[{{"name":"雞排飯","qty":1}}]}}
+   例如「塔香三杯雞 =100謝謝」→ {{"action":"set","items":[{{"name":"塔香三杯雞","qty":1}}]}}
 3. 多行訂單要全部擷取：
    「二寶飯 $100*2=200\n鮭魚飯 $105\n共305\n謝謝」→ 二寶飯 2、鮭魚飯 1，忽略共305與謝謝。
 4. 「改雞腿飯」「換雞腿飯」→ set。
@@ -83,6 +95,11 @@ class GeminiOrderAI:
 7. 「跟ANITA一樣」「一樣」→ copy。
 8. 如果菜單有相近品項，請補成完整菜名。
 9. 不要輸出價格、不要輸出共多少錢、不要輸出謝謝。
+10. 絕對不能把整份菜單當成使用者訂單。
+11. 使用者沒有明確點的餐點，不可以加入。
+12. items 最多只能包含使用者實際點的餐點，不可以因為 menu 裡存在而全部輸出。
+13. 若訊息看起來只是提到人名、標註、測試版、聊天內容，請 ignore。
+14. 如果訊息中的餐點不在目前菜單且也不是合理加料，請 ignore。
 
 目前菜單：{json.dumps(menu, ensure_ascii=False)}
 目前訂單：{json.dumps(current_orders, ensure_ascii=False)}
@@ -108,23 +125,29 @@ class GeminiOrderAI:
         return json.loads(text)
 
     def _quick_ignore(self, msg: str) -> bool:
-        t = msg.strip()
+        t = (msg or "").strip()
         if not t:
             return True
         if t in ("統計", "結單", "明細", "清空", "結束"):
             return True
         if t in IGNORE_WORDS:
             return True
+        if t.startswith("@") or "測試版" in t:
+            return True
         # 幾乎只有 emoji / 符號
         if not re.search(r"[\u4e00-\u9fffA-Za-z0-9]", t):
             return True
         # 單純金額、共400、總共195 這類
-        if re.fullmatch(r"(共|總共|合計)?\s*\$?\s*\d+\s*(元)?\s*(謝謝)?", t):
+        if re.fullmatch(r"(共|總共|合計)?\s*\$?\s*\d+\s*(元)?\s*(謝謝|感謝)?", t):
+            return True
+        # 只有人名 mention 後加測試等
+        no_mentions = _strip_noise(t)
+        if no_mentions in IGNORE_WORDS or not no_mentions:
             return True
         return False
 
     def _fallback(self, msg: str) -> Dict[str, Any]:
-        t = msg.strip()
+        t = _strip_noise(msg.strip())
         if self._quick_ignore(t):
             return {"action": "ignore"}
         if any(x in t for x in ["取消", "不要了", "不用了"]):
@@ -149,11 +172,15 @@ class GeminiOrderAI:
         lines = re.split(r"[\n,，、]+", text)
         items = []
         for line in lines:
-            s = line.strip()
+            s = _strip_noise(line)
             if not s or self._quick_ignore(s):
                 continue
-            if any(w in s for w in ["謝謝", "共", "總共", "合計"]):
-                continue
+            if any(w in s for w in ["謝謝", "感謝", "感恩", "麻煩", "共", "總共", "合計"]):
+                # 先移除禮貌詞，若剩下餐點仍保留
+                for w in ["謝謝", "感謝", "感恩", "麻煩"]:
+                    s = s.replace(w, "")
+                if any(w in s for w in ["共", "總共", "合計"]):
+                    continue
 
             qty = 1
             m = re.search(r"[*xX×]\s*(\d+)", s)
@@ -166,10 +193,11 @@ class GeminiOrderAI:
 
             # 移除價格與算式
             s = re.sub(r"\$?\s*\d+\s*[*xX×]\s*\d+\s*=\s*\d+", "", s)
+            s = re.sub(r"=\s*\d+", "", s)
             s = re.sub(r"\$?\s*\d+\s*(元)?", "", s)
             s = re.sub(r"[*xX×]\s*\d+", "", s)
             s = s.replace("我要", "").replace("我 要", "").strip()
-            s = s.strip("：: -")
-            if s:
+            s = s.strip("：: -＝=")
+            if s and not self._quick_ignore(s):
                 items.append({"name": s, "qty": qty})
         return items

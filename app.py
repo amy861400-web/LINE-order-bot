@@ -95,11 +95,12 @@ def on_text(event):
 
     # 只有「統計」或「結單」會回覆；其他訊息都安靜處理。
     if text in ("統計", "結單"):
-        if text == "結單" and not is_admin(name):
+        if not is_admin(name):
             return
         reply(event.reply_token, orders.summary())
         return
 
+    # 管理指令也不回覆，避免洗版。
     if text == "清空" and is_admin(name):
         orders.reset(menu=orders.menu, active=True)
         return
@@ -135,9 +136,9 @@ def on_image(event):
         confidence = float(result.get("confidence", 0) or 0)
         menu = result.get("menu", [])
 
+        # 只有明確是新菜單才清空上一輪。非菜單圖片完全忽略。
         if image_type == "menu" and confidence >= 0.75 and menu:
             orders.reset_if_new_menu(menu)
-        # 不管是不是菜單，都不回覆。
     except Exception as e:
         print("image handler error:", repr(e))
 
