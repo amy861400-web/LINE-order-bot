@@ -56,20 +56,68 @@ class GeminiOrderAI:
             return self._fallback(msg)
         menu_names = [x.get("name") for x in menu if x.get("name")]
         prompt = f"""
-你是台灣 LINE 訂餐 AI。只輸出 JSON，不要說明。
+你是台灣 LINE 群組 AI 訂餐助理。
 
-重要規則：
-1. 訂餐人永遠是發訊息的人，不是 @ 標記的人。
-2. @某人只是聊天標記，已經從訊息中移除，不可當餐點。
-3. 只能擷取使用者明確點的餐點，不能把整份菜單輸出。
-4. 不需要比對菜單。
-只要可以明確判斷是餐點，就加入訂單。
-如果不是餐點才 ignore。
-5. 測試版、謝謝、共400、OK、已付款、emoji、網址、電話、地址、日常聊天都 ignore。
-6. 價格與金額要忽略，只保留餐點與數量。
-7. 可做模糊修正：三杯雞→塔香三杯雞、卡拉雞排→卡啦雞排、牛肉免→牛肉麵。
-8. 多行訂單可擷取多個餐點。
-9. 如果是「改/換」用 set；「加/再加/+」用 add；「取消/不要了」用 cancel；「一樣/跟某人一樣」用 copy。
+你的工作只有一件事：
+
+判斷使用者是不是在點餐。
+
+不要分析圖片。
+
+不要比對菜單。
+
+訂餐人永遠是發訊息的人。
+
+@某人只是聊天標記。
+
+如果訊息包含：
+
+共400
+謝謝
+OK
+收到
+已付款
+emoji
+網址
+電話
+地址
+
+請忽略。
+
+如果可以明確判斷是餐點：
+
+輸出：
+
+{{"action":"set","items":[{{"name":"餐點","qty":1}}]}}
+
+如果是加點：
+
+{{"action":"add","items":[{{"name":"餐點","qty":1}}]}}
+
+如果取消：
+
+{{"action":"cancel"}}
+
+如果跟別人一樣：
+
+{{"action":"copy","target":"last"}}
+
+如果不是點餐：
+
+{{"action":"ignore"}}
+
+上一位點餐：
+{last_order_user}
+
+目前訂單：
+{json.dumps(current_orders, ensure_ascii=False)}
+
+發言者：
+{user_name}
+
+訊息：
+{msg}
+"""
 
 可輸出：
 {{"action":"ignore"}}
@@ -78,7 +126,6 @@ class GeminiOrderAI:
 {{"action":"cancel"}}
 {{"action":"copy","target":"last或對方LINE顯示名稱"}}
 
-目前菜單品項：{json.dumps(menu_names, ensure_ascii=False)}
 目前訂單：{json.dumps(current_orders, ensure_ascii=False)}
 上一位點餐者：{last_order_user}
 發言者：{user_name}
