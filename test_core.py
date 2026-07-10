@@ -47,23 +47,26 @@ def run():
         changed = ai.parse_chat("改成排骨飯", "Wu Yi Ru", [], {}, None)
         assert changed["action"] == "set", changed
 
-        # 相同主餐的不同備註要相鄰顯示
+        # A-Z／Unicode 排序：相同開頭自然排在一起
         manager.clear(scope)
         manager.apply_ai_result(
             scope, "u1", "Wu Yi Ru",
             {"action": "add", "items": [
-                {"name": "卡拉雞排", "qty": 1},
-                {"name": "糖醋里肌 飯半", "qty": 1},
                 {"name": "塔香三杯雞", "qty": 1},
+                {"name": "糖醋里肌 飯半", "qty": 1},
+                {"name": "卡拉雞排", "qty": 1},
                 {"name": "糖醋里肌", "qty": 5},
+                {"name": "糖醋里肌 不要菜", "qty": 1},
             ]}
         )
-        grouped_summary = manager.summary(scope)
-        first = grouped_summary.index("糖醋里肌 5")
-        second = grouped_summary.index("糖醋里肌 飯半 1")
-        assert first < second
-        between = grouped_summary[first:second]
-        assert "塔香三杯雞" not in between
+        sorted_summary = manager.summary(scope)
+        food_lines = [
+            line for line in sorted_summary.splitlines()
+            if line and not line.endswith(":") and line != "----------------"
+        ]
+        expected_order = sorted(food_lines[:5], key=str.casefold)
+        assert food_lines[:5] == expected_order, (food_lines[:5], expected_order)
+        assert food_lines[:5].index("糖醋里肌 5") < food_lines[:5].index("糖醋里肌 飯半 1")
 
         print("All core tests passed.")
         print(summary)

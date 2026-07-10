@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 from typing import Any
-import re
 
 from database import OrderDatabase
 
@@ -89,7 +88,10 @@ class OrderManager:
         items = self.db.user_items(scope_id, user_id)
         if not items:
             return "目前沒有訂單"
-        return "\n".join(f"{food} {qty}" for food, qty in items.items())
+        return "\n".join(
+            f"{food} {qty}"
+            for food, qty in self._sorted_items(items)
+        )
 
     def summary(self, scope_id: str) -> str:
         rows = self.db.all_orders(scope_id)
@@ -110,58 +112,32 @@ class OrderManager:
         lines: list[str] = []
         for name, items in users.items():
             lines.append(f"{name} :")
-            for food, qty in self._grouped_items(items):
+            for food, qty in self._sorted_items(items):
                 lines.append(f"{food} {qty}")
             lines.append("")
 
         lines.append("----------------")
         lines.append("")
-        for food, qty in self._grouped_items(total):
+        for food, qty in self._sorted_items(total):
             lines.append(f"{food} {qty}")
 
         return "\n".join(lines).strip()
 
-    @classmethod
-    def _grouped_items(cls, items) -> list[tuple[str, int]]:
-        """
-        相同主餐的不同備註排在一起，但不合併不同備註。
-        主餐群組依第一次出現順序排列，群組內主餐本體排最前面。
-        """
-        groups: OrderedDict[str, list[tuple[int, str, int]]] = OrderedDict()
-        for index, (food, qty) in enumerate(items.items()):
-            base = cls._base_food_name(food)
-            groups.setdefault(base, []).append((index, food, int(qty)))
-
-        output: list[tuple[str, int]] = []
-        for base, group in groups.items():
-            group.sort(key=lambda row: (0 if row[1] == base else 1, row[0]))
-            output.extend((food, qty) for _, food, qty in group)
-        return output
-
     @staticmethod
-    def _base_food_name(food: str) -> str:
-        """取得用於排序分組的主餐名稱，不改變實際顯示文字。"""
-        value = str(food or "").strip()
-        patterns = [
-            r"\s+(飯半|半飯|飯少|少飯|飯多|多飯|不要飯|去飯)$",
-            r"\s+(不要|不加|去掉|少|多|加)(蔥|蒜|辣|菜|醬|飯|蛋|酸菜|香菜).*$",
-            r"\s+(微辣|小辣|中辣|大辣|不辣)$",
-            r"\s*\((飯半|半飯|飯少|少飯|不要菜|不要辣|不辣).+?\)$",
-        ]
+    def _sorted_items(items) -> list[tuple[str, int]]:
+        """
+        依餐點完整名稱進行 A-Z／Unicode 排序。
 
-        base = value
-        for pattern in patterns:
-            base = re.sub(pattern, "", base).strip()
-
-        if base == value and " " in value:
-            first, rest = value.split(" ", 1)
-            if any(token in rest for token in (
-                "飯半", "半飯", "飯少", "少飯", "飯多", "多飯",
-                "不要", "不加", "少", "加", "辣", "去",
-            )):
-                base = first
-
-        return base or value
+        因為相同主餐通常具有相同開頭，所以例如：
+        糖醋里肌
+        糖醋里肌 飯半
+        糖醋里肌 不要菜
+        會自然排在一起；不同備註仍保留為不同品項。
+        """
+        return sorted(
+            ((str(food), int(qty)) for food, qty in items.items()),
+            key=lambda pair: pair[0].casefold(),
+        )
 
     @staticmethod
     def _normalize_items(raw_items: Any) -> Counter[str]:
