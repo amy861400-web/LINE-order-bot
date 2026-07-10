@@ -146,32 +146,20 @@ def on_text(event):
 
 @handler.add(MessageEvent, message=ImageMessageContent)
 def on_image(event):
+    """
+    任何圖片都視為新的一輪訂餐開始
+    不分析圖片、不辨識菜單
+    """
+
     try:
-        with ApiClient(configuration) as api_client:
-            blob_api = MessagingApiBlob(api_client)
-            content = blob_api.get_message_content(event.message.id)
+        # 清空上一輪訂單
+        orders.reset(menu=[], active=True)
 
-            if isinstance(content, (bytes, bytearray)):
-                image_bytes = content
-            else:
-                image_bytes = content.read()
-
-        try:
-            result = ai.analyze_image(image_bytes)
-            menu = result.get("menu", [])
-        except Exception as e:
-            print("Gemini image analyze error:", repr(e))
-            menu = []
-
-        # 只要有人傳圖片，就直接開始新一輪訂餐
-        # 不管 Gemini 有沒有成功辨識菜單，都先清空上一輪
-        orders.reset(menu=menu, active=True)
-
-        # 圖片不回覆任何訊息
+        print("===== NEW ORDER START =====")
+        print("Image received -> New round started.")
 
     except Exception as e:
         print("image handler error:", repr(e))
-
         # 就算圖片讀取失敗，也開始新一輪
         orders.reset(menu=[], active=True)
 
