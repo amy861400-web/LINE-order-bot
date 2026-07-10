@@ -5,8 +5,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
       - key: LINE_CHANNEL_SECRET
         sync: false
       - key: LINE_CHANNEL_ACCESS_TOKEN
@@ -15,5 +13,7 @@ services:
         sync: false
       - key: ADMIN_LINE_NAMES
         sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: DB_PATH
-        value: orders.db
+        value: data/orders.db
