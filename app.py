@@ -2,69 +2,59 @@ from __future__ import annotations
 
 import os
 from flask import Flask, request
-
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
-    Configuration,
     ApiClient,
+    Configuration,
     MessagingApi,
-    MessagingApiBlob,
     ReplyMessageRequest,
     TextMessage,
 )
-from linebot.v3.webhooks import (
-    MessageEvent,
-    TextMessageContent,
-    ImageMessageContent,
-)
+from linebot.v3.webhooks import ImageMessageContent, MessageEvent, TextMessageContent
 
-from order_manager import OrderManager
+from database import OrderDatabase
 from gemini_ai import GeminiOrderAI
 
 app = Flask(__name__)
 
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-ADMIN_LINE_NAMES = [
-    x.strip()
-    for x in os.getenv("ADMIN_LINE_NAMES", "").split(",")
-    if x.strip()
-]
+LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
+LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+ADMIN_LINE_NAMES = {
+    name.strip()
+    for name in os.getenv("ADMIN_LINE_NAMES", "").split(",")
+    if name.strip()
+}
+DB_PATH = os.getenv("DB_PATH", "orders.db")
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-
-orders = OrderManager()
+db = OrderDatabase(DB_PATH)
 ai = GeminiOrderAI(GEMINI_API_KEY)
 
 
-@app.route("/")
+@app.get("/")
 def home():
-    return "LINE Order Bot OK"
+    return "LINE Order Bot OK", 200
 
 
-@app.route("/callback", methods=["POST"])
+@app.post("/callback")
 def callback():
-    signature = request.headers.get("X-Line-Signature")
+    signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         return "Invalid signature", 400
-    except Exception as e:
-        print("ERROR:", repr(e))
-
+    except Exception as exc:
+        print("callback error:", repr(exc))
     return "OK", 200
 
 
-def reply(reply_token: str, text: str):
+def reply(reply_token: str, text: str) -> None:
     if not text:
         return
-
     with ApiClient(configuration) as api_client:
         MessagingApi(api_client).reply_message(
             ReplyMessageRequest(
@@ -74,95 +64,94 @@ def reply(reply_token: str, text: str):
         )
 
 
-def get_display_name(event) -> str:
-    src = event.source
-    user_id = getattr(src, "user_id", "unknown")
+def scope_id(event) -> str:
+    source = event.source
+    group_id = getattr(source, "group_id", None)
+    room_id = getattr(source, "room_id", None)
+    user_id = getattr(source, "user_id", "unknown")
+    if group_id:
+        return f"group:{group_id}"
+    if room_id:
+        return f"room:{room_id}"
+    return f"user:{user_id}"
 
+
+def get_display_name(event) -> str:
+    source = event.source
+    user_id = getattr(source, "user_id", "unknown")
     with ApiClient(configuration) as api_client:
         api = MessagingApi(api_client)
-
         try:
-            group_id = getattr(src, "group_id", None)
-            room_id = getattr(src, "room_id", None)
-
+            group_id = getattr(source, "group_id", None)
+            room_id = getattr(source, "room_id", None)
             if group_id:
                 profile = api.get_group_member_profile(group_id, user_id)
             elif room_id:
                 profile = api.get_room_member_profile(room_id, user_id)
             else:
                 profile = api.get_profile(user_id)
-
             return profile.display_name or user_id
-
-        except Exception as e:
-            print("profile error:", repr(e))
+        except Exception as exc:
+            print("profile error:", repr(exc))
             return user_id
 
 
 def is_admin(display_name: str) -> bool:
-    if not ADMIN_LINE_NAMES:
-        return True
-    return display_name in ADMIN_LINE_NAMES
+    return not ADMIN_LINE_NAMES or display_name in ADMIN_LINE_NAMES
+
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def on_image(event):
+    # 依使用者需求：任何圖片都直接開啟新一輪，不分析圖片內容，也不回覆。
+    db.start_new_round(scope_id(event))
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def on_text(event):
     text = (event.message.text or "").strip()
+    if not text:
+        return
+
+    scope = scope_id(event)
     user_id = getattr(event.source, "user_id", "unknown")
-    name = get_display_name(event)
+    display_name = get_display_name(event)
 
-    if text in ("統計", "結單"):
-        if not is_admin(name):
+    if text in {"統計", "結單"}:
+        if not is_admin(display_name):
             return
-
-        reply(event.reply_token, orders.summary())
+        reply(event.reply_token, db.summary(scope))
         return
 
-    if text == "清空" and is_admin(name):
-        orders.reset(menu=orders.menu, active=True)
+    if text == "我的訂單":
+        reply(event.reply_token, db.user_summary(scope, user_id, display_name))
         return
 
-    if text == "結束" and is_admin(name):
-        orders.stop()
+    if text == "清空":
+        if is_admin(display_name):
+            db.start_new_round(scope)
         return
 
-    if not orders.active:
+    if text == "結束":
+        if is_admin(display_name):
+            db.stop_round(scope)
+        return
+
+    if not db.is_active(scope):
         return
 
     result = ai.parse_chat(
         message=text,
-        user_name=name,
-        menu=orders.menu,
-        current_orders=orders.public_orders(),
-        last_order_user=orders.last_order_user_name,
+        user_name=display_name,
+        current_orders=db.public_orders(scope),
+        last_order_user=db.last_order_user_name(scope),
     )
-
-    orders.apply_ai_result(
+    db.apply_ai_result(
+        scope=scope,
         user_id=user_id,
-        user_name=name,
+        user_name=display_name,
         result=result,
     )
 
 
-@handler.add(MessageEvent, message=ImageMessageContent)
-def on_image(event):
-    """
-    任何圖片都視為新的一輪訂餐開始
-    不分析圖片、不辨識菜單
-    """
-
-    try:
-        # 清空上一輪訂單
-        orders.reset(menu=[], active=True)
-
-        print("===== NEW ORDER START =====")
-        print("Image received -> New round started.")
-
-    except Exception as e:
-        print("image handler error:", repr(e))
-        # 就算圖片讀取失敗，也開始新一輪
-        orders.reset(menu=[], active=True)
-
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))

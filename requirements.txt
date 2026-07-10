@@ -1,5 +1,4 @@
-Flask==3.0.3
-gunicorn==23.0.0
-line-bot-sdk==3.14.2
-google-generativeai==0.8.3
-rapidfuzz==3.9.7
+Flask>=3.0,<4
+gunicorn>=22,<27
+line-bot-sdk>=3.14,<4
+google-generativeai>=0.8,<1
