@@ -100,7 +100,10 @@ class GeminiOrderAI:
         return None
 
     def _extract_items(self, text: str) -> list[dict[str, Any]]:
-        parts = re.split(r"[\n,，、；;]+", text)
+        parts = re.split(
+            r"(?:[\n,，、；;]+|\s*[+＋&＆]\s*|\s+(?:和|跟)\s+)",
+            text,
+        )
         items: list[dict[str, Any]] = []
 
         for raw in parts:
@@ -187,7 +190,9 @@ class GeminiOrderAI:
 - 「一樣、跟某人一樣」是 copy。
 - 去掉價格、總價、等號、共多少元、謝謝、emoji、網址、電話、地址。
 - 日常聊天、測試版、收到、OK、已付款都 ignore。
-- 多行或逗號分隔可解析多個餐點。
+- 多行、逗號、頓號、分號，或「+、＋、&、＆」可拆成多個餐點。
+- 例如「炒麵小+隔間肉湯=100謝謝」要拆成炒麵小、隔間肉湯。
+- 例如「炒麵 大 +荷包蛋」要拆成炒麵 大、荷包蛋。
 - 數量可辨識 x2、*2、×2、2份。
 
 目前訂單：{json.dumps(current_orders, ensure_ascii=False)}

@@ -90,7 +90,7 @@ class OrderManager:
             return "目前沒有訂單"
         return "\n".join(
             f"{food} {qty}"
-            for food, qty in self._sorted_items(items)
+            for food, qty in sorted(items.items(), key=lambda item: item[0].casefold())
         )
 
     def summary(self, scope_id: str) -> str:
@@ -112,32 +112,22 @@ class OrderManager:
         lines: list[str] = []
         for name, items in users.items():
             lines.append(f"{name} :")
-            for food, qty in self._sorted_items(items):
+            for food, qty in sorted(
+                items.items(),
+                key=lambda item: item[0].casefold(),
+            ):
                 lines.append(f"{food} {qty}")
             lines.append("")
 
         lines.append("----------------")
         lines.append("")
-        for food, qty in self._sorted_items(total):
+        for food, qty in sorted(
+            total.items(),
+            key=lambda item: item[0].casefold(),
+        ):
             lines.append(f"{food} {qty}")
 
         return "\n".join(lines).strip()
-
-    @staticmethod
-    def _sorted_items(items) -> list[tuple[str, int]]:
-        """
-        依餐點完整名稱進行 A-Z／Unicode 排序。
-
-        因為相同主餐通常具有相同開頭，所以例如：
-        糖醋里肌
-        糖醋里肌 飯半
-        糖醋里肌 不要菜
-        會自然排在一起；不同備註仍保留為不同品項。
-        """
-        return sorted(
-            ((str(food), int(qty)) for food, qty in items.items()),
-            key=lambda pair: pair[0].casefold(),
-        )
 
     @staticmethod
     def _normalize_items(raw_items: Any) -> Counter[str]:

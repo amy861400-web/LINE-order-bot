@@ -47,26 +47,65 @@ def run():
         changed = ai.parse_chat("改成排骨飯", "Wu Yi Ru", [], {}, None)
         assert changed["action"] == "set", changed
 
-        # A-Z／Unicode 排序：相同開頭自然排在一起
+
+        # 「+」連接的餐點必須拆開計算
+        plus_order = ai.parse_chat(
+            "炒麵小+隔間肉湯=100謝謝",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert plus_order == {
+            "action": "add",
+            "items": [
+                {"name": "炒麵小", "qty": 1},
+                {"name": "隔間肉湯", "qty": 1},
+            ],
+        }, plus_order
+
+        fullwidth_plus_order = ai.parse_chat(
+            "炒麵 大 ＋ 荷包蛋",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert fullwidth_plus_order == {
+            "action": "add",
+            "items": [
+                {"name": "炒麵 大", "qty": 1},
+                {"name": "荷包蛋", "qty": 1},
+            ],
+        }, fullwidth_plus_order
+
+        ampersand_order = ai.parse_chat(
+            "雞腿飯&滷蛋&豆干",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert ampersand_order == {
+            "action": "add",
+            "items": [
+                {"name": "雞腿飯", "qty": 1},
+                {"name": "滷蛋", "qty": 1},
+                {"name": "豆干", "qty": 1},
+            ],
+        }, ampersand_order
+
+        # A-Z / Unicode 排序
         manager.clear(scope)
         manager.apply_ai_result(
             scope, "u1", "Wu Yi Ru",
             {"action": "add", "items": [
-                {"name": "塔香三杯雞", "qty": 1},
                 {"name": "糖醋里肌 飯半", "qty": 1},
                 {"name": "卡拉雞排", "qty": 1},
                 {"name": "糖醋里肌", "qty": 5},
-                {"name": "糖醋里肌 不要菜", "qty": 1},
+                {"name": "塔香三杯雞", "qty": 1},
             ]}
         )
         sorted_summary = manager.summary(scope)
-        food_lines = [
-            line for line in sorted_summary.splitlines()
-            if line and not line.endswith(":") and line != "----------------"
+        ordered_lines = [
+            "卡拉雞排 1",
+            "塔香三杯雞 1",
+            "糖醋里肌 5",
+            "糖醋里肌 飯半 1",
         ]
-        expected_order = sorted(food_lines[:5], key=str.casefold)
-        assert food_lines[:5] == expected_order, (food_lines[:5], expected_order)
-        assert food_lines[:5].index("糖醋里肌 5") < food_lines[:5].index("糖醋里肌 飯半 1")
+        positions = [sorted_summary.index(line) for line in ordered_lines]
+        assert positions == sorted(positions), sorted_summary
 
         print("All core tests passed.")
         print(summary)
