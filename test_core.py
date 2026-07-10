@@ -107,6 +107,72 @@ def run():
         positions = [sorted_summary.index(line) for line in ordered_lines]
         assert positions == sorted(positions), sorted_summary
 
+
+        manager.clear(scope)
+        manager.apply_ai_result(
+            scope, "u1", "Wu Yi Ru",
+            {"action": "add", "items": [
+                {"name": "炒麵大", "qty": 1},
+                {"name": "炒麵 大", "qty": 1},
+                {"name": "炒麵　大", "qty": 1},
+                {"name": "雞腿飯加蛋", "qty": 1},
+                {"name": "雞腿飯 加蛋", "qty": 1},
+            ]}
+        )
+        normalized_summary = manager.summary(scope)
+        assert "炒麵 大 3" in normalized_summary, normalized_summary
+        assert "雞腿飯 加蛋 2" in normalized_summary, normalized_summary
+
+
+        # v1.4：x/X/×/* 後面的數字一律視為數量
+        x_lower = ai.parse_chat(
+            "炒麵大x3=150",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert x_lower == {
+            "action": "add",
+            "items": [{"name": "炒麵大", "qty": 3}],
+        }, x_lower
+
+        x_upper = ai.parse_chat(
+            "綜合湯X3=180",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert x_upper == {
+            "action": "add",
+            "items": [{"name": "綜合湯", "qty": 3}],
+        }, x_upper
+
+        x_symbol = ai.parse_chat(
+            "雞腿飯×2=210",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert x_symbol == {
+            "action": "add",
+            "items": [{"name": "雞腿飯", "qty": 2}],
+        }, x_symbol
+
+        x_star = ai.parse_chat(
+            "滷蛋 * 4 = 60",
+            "Wu Yi Ru", [], {}, None
+        )
+        assert x_star == {
+            "action": "add",
+            "items": [{"name": "滷蛋", "qty": 4}],
+        }, x_star
+
+        # 驗證寫入後正規化與合併
+        manager.clear(scope)
+        manager.apply_ai_result(scope, "u1", "Wu Yi Ru", x_lower)
+        manager.apply_ai_result(scope, "u1", "Wu Yi Ru", x_upper)
+        manager.apply_ai_result(
+            scope, "u1", "Wu Yi Ru",
+            {"action": "add", "items": [{"name": "炒麵 大", "qty": 1}]}
+        )
+        v14_summary = manager.summary(scope)
+        assert "炒麵 大 4" in v14_summary, v14_summary
+        assert "綜合湯 3" in v14_summary, v14_summary
+
         print("All core tests passed.")
         print(summary)
 

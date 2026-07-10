@@ -2,8 +2,30 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 from typing import Any
+import re
 
 from database import OrderDatabase
+
+
+
+def normalize_food_name(name: str) -> str:
+    text = str(name or "").replace("\u3000", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+
+    text = re.sub(r"\s*([大中小])$", r" \1", text)
+
+    notes = [
+        "飯半", "半飯", "少飯", "飯少", "多飯", "飯多",
+        "加蛋", "荷包蛋", "滷蛋",
+        "不要菜", "不加菜", "少菜", "多菜",
+        "不要辣", "不辣", "微辣", "小辣", "中辣", "大辣",
+        "不要蔥", "不加蔥", "不要香菜", "不加香菜",
+        "不要醬", "醬少", "醬多",
+    ]
+    for note in sorted(notes, key=len, reverse=True):
+        text = re.sub(rf"\s*{re.escape(note)}$", f" {note}", text)
+
+    return re.sub(r"\s+", " ", text).strip()
 
 
 class OrderManager:
@@ -138,7 +160,7 @@ class OrderManager:
         for item in raw_items:
             if not isinstance(item, dict):
                 continue
-            name = str(item.get("name", "")).strip()
+            name = normalize_food_name(str(item.get("name", "")))
             if not name:
                 continue
             try:

@@ -123,7 +123,12 @@ class GeminiOrderAI:
                     qty = self._chinese_number(chinese_qty.group(1))
 
             # 移除總價算式與單價。
-            line = re.sub(r"[$＄]?\s*\d+\s*[*xX×]\s*\d+\s*=\s*\d+", " ", line)
+            # 支援：100x3=300、x3=150、X 3 = 150、×3、*3。
+            line = re.sub(
+                r"[$＄]?\s*\d*\s*[*xX×]\s*\d+\s*=\s*\d+",
+                " ",
+                line,
+            )
             line = re.sub(r"[$＄]?\s*\d+\s*(元)?", " ", line)
             line = re.sub(r"[*xX×]\s*\d+", " ", line)
             line = re.sub(r"[兩二三四五六七八九十]\s*份", " ", line)
@@ -193,7 +198,9 @@ class GeminiOrderAI:
 - 多行、逗號、頓號、分號，或「+、＋、&、＆」可拆成多個餐點。
 - 例如「炒麵小+隔間肉湯=100謝謝」要拆成炒麵小、隔間肉湯。
 - 例如「炒麵 大 +荷包蛋」要拆成炒麵 大、荷包蛋。
-- 數量可辨識 x2、*2、×2、2份。
+- 數量可辨識 x2、X2、*2、×2、x 2、X 2、* 2、× 2、2份。
+- 例如「炒麵大x3=150」要解析為炒麵大，數量3。
+- 例如「綜合湯X3=180」要解析為綜合湯，數量3。
 
 目前訂單：{json.dumps(current_orders, ensure_ascii=False)}
 上一位點餐者：{last_order_user}
