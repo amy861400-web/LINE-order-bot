@@ -11,8 +11,6 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: ADMIN_LINE_NAMES
-        sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: DB_PATH

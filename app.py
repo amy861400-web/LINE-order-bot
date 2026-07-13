@@ -29,12 +29,6 @@ if not LINE_CHANNEL_SECRET:
 if not LINE_CHANNEL_ACCESS_TOKEN:
     raise RuntimeError("缺少環境變數 LINE_CHANNEL_ACCESS_TOKEN")
 
-ADMIN_LINE_NAMES = {
-    name.strip()
-    for name in os.getenv("ADMIN_LINE_NAMES", "").split(",")
-    if name.strip()
-}
-
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 orders = OrderManager()
@@ -111,10 +105,6 @@ def get_display_name(event) -> str:
         return user_id
 
 
-def is_admin(display_name: str) -> bool:
-    return not ADMIN_LINE_NAMES or display_name in ADMIN_LINE_NAMES
-
-
 @handler.add(MessageEvent, message=ImageMessageContent)
 def on_image(event):
     # 不下載、不辨識圖片。任何圖片都直接開始新一輪。
@@ -134,8 +124,7 @@ def on_text(event):
     display_name = get_display_name(event)
 
     if text in {"統計", "結單"}:
-        if is_admin(display_name):
-            reply(event.reply_token, orders.summary(scope_id))
+        reply(event.reply_token, orders.summary(scope_id))
         return
 
     if text == "我的訂單":
@@ -143,13 +132,11 @@ def on_text(event):
         return
 
     if text == "清空":
-        if is_admin(display_name):
-            orders.clear(scope_id)
+        orders.clear(scope_id)
         return
 
     if text == "結束":
-        if is_admin(display_name):
-            orders.stop(scope_id)
+        orders.stop(scope_id)
         return
 
     # 必須先傳圖片，才會有啟用中的訂餐輪次。
