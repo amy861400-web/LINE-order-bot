@@ -13,7 +13,7 @@ if not SECRET:raise RuntimeError('缺少環境變數 LINE_CHANNEL_SECRET')
 if not TOKEN:raise RuntimeError('缺少環境變數 LINE_CHANNEL_ACCESS_TOKEN')
 configuration=Configuration(access_token=TOKEN);handler=WebhookHandler(SECRET);orders=OrderManager();parser=OrderParser()
 @app.get('/')
-def home():return 'LINE Order Bot v2.0 LTS OK',200
+def home():return 'LINE Order Bot v2.1 LTS OK',200
 @app.post('/callback')
 def callback():
     sig=request.headers.get('X-Line-Signature','');body=request.get_data(as_text=True)
@@ -44,7 +44,7 @@ def on_text(event):
     if text in {'取消我的訂單','取消訂單'}:orders.apply(sc,uid,display(event),{'action':'cancel'});return
     if text=='清空':orders.clear(sc);return
     if text=='結束':orders.close(sc);return
-    if not orders.is_active(sc):return
+    if text=='/status':reply(event.reply_token,orders.status(sc));return
     result=parser.parse(text)
     if result.get('action')!='ignore':orders.apply(sc,uid,display(event),result)
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.getenv('PORT','5000')))

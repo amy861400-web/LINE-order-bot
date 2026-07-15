@@ -6,11 +6,13 @@ class OrderManager:
     def __init__(self,db=None):self.db=db or OrderDatabase()
     def start_new_round(self,scope_id):self.db.start_round(scope_id)
     def is_active(self,scope_id):return self.db.active_round(scope_id) is not None
+    def ensure_round(self,scope_id):return self.db.ensure_round(scope_id)
     def close(self,scope_id):self.db.close_round(scope_id)
     def clear(self,scope_id):self.db.clear_orders(scope_id)
     def apply(self,scope_id,user_id,user_name,result):
-        if not self.is_active(scope_id) or not isinstance(result,dict):return False
+        if not isinstance(result,dict):return False
         a=str(result.get('action','ignore')).lower().strip()
+        if a!='ignore':self.ensure_round(scope_id)
         if a=='ignore':return False
         if a=='cancel':self.db.cancel_user(scope_id,user_id);return True
         if a=='copy':
@@ -42,3 +44,10 @@ class OrderManager:
         for name,items in users.items():
             lines.append(f'{name} :');lines += [f'{f} {q}' for f,q in sorted(items.items(),key=lambda x:x[0].casefold())];lines.append('')
         lines+=['----------------',''];lines += [f'{f} {q}' for f,q in sorted(total.items(),key=lambda x:x[0].casefold())];lines += ['',f'本輪共 {len(uids)} 人',f'共 {sum(total.values())} 份'];return '\n'.join(lines).strip()
+
+    def status(self,scope_id):
+        info=self.db.current_round_info(scope_id);rows=self.db.all_orders(scope_id)
+        if not info:
+            return "Version：2.1 LTS\nRound：尚未建立\nStatus：NONE\nPeople：0\nOrders：0\nSQLite：OK"
+        people=len({str(r['user_id']) for r in rows});orders=sum(int(r['qty']) for r in rows)
+        return f"Version：2.1 LTS\nRound：{info['id']}\nStatus：{str(info['status']).upper()}\nCreated：{info['created_at']}\nPeople：{people}\nOrders：{orders}\nSQLite：OK"

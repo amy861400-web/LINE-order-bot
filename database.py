@@ -22,20 +22,24 @@ class OrderDatabase:
     def active_round(self,scope_id):
         with self._lock,self._connect() as c:
             r=c.execute("SELECT id FROM rounds WHERE scope_id=? AND status='open' ORDER BY id DESC LIMIT 1",(scope_id,)).fetchone(); return int(r['id']) if r else None
+    def ensure_round(self,scope_id):
+        rid=self.active_round(scope_id)
+        return rid if rid is not None else self.start_round(scope_id)
+    def current_round_info(self,scope_id):
+        with self._lock,self._connect() as c:
+            r=c.execute("SELECT id,status,created_at FROM rounds WHERE scope_id=? AND status='open' ORDER BY id DESC LIMIT 1",(scope_id,)).fetchone(); return dict(r) if r else None
     def close_round(self,scope_id):
         with self._lock,self._connect() as c: c.execute("UPDATE rounds SET status='closed',closed_at=CURRENT_TIMESTAMP WHERE scope_id=? AND status='open'",(scope_id,))
     def clear_orders(self,scope_id):
         rid=self.active_round(scope_id) or self.start_round(scope_id)
         with self._lock,self._connect() as c: c.execute("DELETE FROM orders WHERE round_id=?",(rid,))
     def add_items(self,scope_id,user_id,user_name,items):
-        rid=self.active_round(scope_id)
-        if rid is None:return False
+        rid=self.ensure_round(scope_id)
         with self._lock,self._connect() as c:
             for food,qty in items.items(): c.execute("""INSERT INTO orders(round_id,user_id,user_name,food_name,qty) VALUES(?,?,?,?,?) ON CONFLICT(round_id,user_id,food_name) DO UPDATE SET user_name=excluded.user_name,qty=orders.qty+excluded.qty,updated_at=CURRENT_TIMESTAMP""",(rid,user_id,user_name,food,qty))
         return True
     def set_items(self,scope_id,user_id,user_name,items):
-        rid=self.active_round(scope_id)
-        if rid is None:return False
+        rid=self.ensure_round(scope_id)
         with self._lock,self._connect() as c:
             c.execute("DELETE FROM orders WHERE round_id=? AND user_id=?",(rid,user_id))
             for food,qty in items.items(): c.execute("INSERT INTO orders(round_id,user_id,user_name,food_name,qty) VALUES(?,?,?,?,?)",(rid,user_id,user_name,food,qty))
